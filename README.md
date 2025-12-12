@@ -1,5 +1,3 @@
-<img src="">
-
 Ferramenta de Enumeração Multi-Threaded para CTF
 
 🚀 Visão Geral
