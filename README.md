@@ -9,10 +9,12 @@ Você escolhe o que quer rodar — diretórios, arquivos, parâmetros ou XSS.
 
 ⚙️ Pipeline do TRAXTOR
 Fluxo completo (--full):
+<br/>
 Feroxbuster – encontra diretórios.
-FFUF – fuzz de arquivos/endpoints.
-ParamSpider – coleta URLs com parâmetros.
-kXSS – testa XSS nas URLs encontradas.
+<br/>
+FFUF – fuzz de arquivos/endpoints. <br/>
+ParamSpider – coleta URLs com parâmetros. <br/>
+kXSS – testa XSS nas URLs encontradas. <br/>
 
 ⚠️ Aviso Legal
 <br/>
