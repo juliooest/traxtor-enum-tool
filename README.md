@@ -41,11 +41,18 @@ python3 traxtor.py -u https://target.com -w /path/to/wordlist.txt --param --kxss
 
 🔧 Argumentos
 Flag	Descrição	Default
+<br/>
 -u, --url	URL alvo (obrigatório)	-
+<br/>
 -w, --wordlist	Caminho da wordlist (obrigatório)	-
+<br/>
 -t, --threads	Threads para Ferox e concurrency	30
---full	Pipeline completo	-
+<br/>
+--full	Pipeline completo	- <br/>
 --ferox	Habilita Feroxbuster	-
+<br/>
 --ffuf	Habilita FFUF	-
+<br/>
 --param	Habilita ParamSpider	-
+<br/>
 --kxss	Habilita kXSS	-
