@@ -29,15 +29,41 @@ def run(cmd):
 
 def feroxbuster_scan(target, wordlist, threads):
     print(f"[*] Feroxbuster: Iniciando em {target}...")
-    cmd = f"feroxbuster -u {target} -w {wordlist} -d 4 -t {threads} --silent --no-recursion"
-    output = run(cmd)
+    
+    # Usamos o output JSON para capturar apenas URLs válidas de forma limpa
+    output_json = f"{OUTPUT_DIR}/ferox_raw.json"
+    cmd = f"feroxbuster -u {target} -w {wordlist} -d 4 -t {threads} --silent --no-recursion -o {output_json} -x json"
+    run(cmd)
 
     dirs = set()
-    for line in output.splitlines():
-        m = re.search(r"((?:https?://|http://)[^\s]+?)(?:/\s|$)", line)
-        if m:
-            dirs.add(m.group(1).rstrip("/"))
-            
+    interesting_dirs = []
+
+    if os.path.exists(output_json):
+        try:
+            with open(output_json, 'r') as f:
+                for line in f:
+                    try:
+                        data = json.loads(line)
+                        url = data.get('url', '').rstrip("/")
+                        status_code = data.get('status', 0)
+
+                        if status_code >= 200 and status_code < 500 and status_code != 404:
+                            interesting_dirs.append(f"{url} [Status: {status_code}]")
+                        
+                        dirs.add(url)
+
+                    except json.JSONDecodeError:
+                        continue 
+
+            with open(f"{OUTPUT_DIR}/interesting_dirs.txt", "w") as f:
+                f.write("\n".join(interesting_dirs))
+                
+            os.remove(output_json)
+
+
+        except Exception as e:
+            print(f"[!] Erro ao processar Feroxbuster JSON: {e}")
+
     dirs_list = list(dirs)
     with open(f"{OUTPUT_DIR}/dirs_found.txt", "w") as f:
         f.write("\n".join(dirs_list))
@@ -138,7 +164,7 @@ def parameter_fuzzing(params, wordlist):
         print("[-] Nenhuma URL com parâmetro para fuzzing.")
         return
 
-    print(f"\n[+] Iniciando Fuzzing de VALOR de Parâmetros (LFI/SQLi) em {len(params)} URLs...")
+    print(f"\n[+] Iniciando Fuzzing de VALOR de Parâmetros (LFI/SQLi) com '{wordlist}'...")
     
     fuzz_targets_file = f"{OUTPUT_DIR}/param_fuzz_targets.txt"
     
@@ -210,10 +236,13 @@ def main():
     )
     
     parser.add_argument("-u", "--url", required=True, help="Alvo ex: https://site.com")
-    parser.add_argument("-w", "--wordlist", required=True, help="Wordlist de diretórios/arquivos (também usada para fuzzing de parâmetros)")
+    parser.add_argument("-w", "--wordlist", required=True, help="Wordlist principal de diretórios/arquivos (fallback para fuzzing)")
     
     parser.add_argument("-t", "--threads", default=MAX_WORKERS, type=int, 
                         help=f"Número de threads para o Feroxbuster (Padrão: {MAX_WORKERS})")
+                        
+    # NOVO ARGUMENTO
+    parser.add_argument("--param-wordlist", help="Wordlist específica para fuzzing de parâmetros (LFI/SQLi).")
     
     parser.add_argument("--ferox", action="store_true", help="Rodar Feroxbuster (Diretórios)")
     parser.add_argument("--ffuf", action="store_true", help="Rodar FFUF (Arquivos/Endpoints)")
@@ -244,25 +273,48 @@ def main():
         kxss_scan(params)
 
     should_fuzz_param = (args.fuzz_param or args.full)
+    
+    # Define qual wordlist usar
+    fuzz_list_path = args.param_wordlist if args.param_wordlist else args.wordlist
+    
     if should_fuzz_param and params:
-        parameter_fuzzing(params, args.wordlist)
+        parameter_fuzzing(params, fuzz_list_path)
 
     finalize_summary()
     
     print("\n[+] Processo de Enumeração Concluído.")
     print(f"Output salvo em /{OUTPUT_DIR}")
     
+    # Lógica do Prompt Interativo
     if not should_fuzz_param and params:
         
         print("\n\n#####################################################################")
-        print("❓ Deseja iniciar o Fuzzing de Parâmetros (LFI/SQLi/etc.) agora?")
-        print(f"   (Será usada a wordlist principal: {args.wordlist})")
+        print(" Deseja iniciar o Fuzzing de Parâmetros (LFI/SQLi/etc.) agora?")
         
-        resposta = input("Digite 'S' para Sim ou qualquer tecla para Não: ").upper()
+        if args.param_wordlist:
+            print(f"   (Será usada a wordlist específica: {args.param_wordlist})")
+        else:
+            print(f"   (A wordlist principal ('{args.wordlist}') será usada como fallback.)")
+
+        resposta_sim_nao = input("Digite 'S' para Sim ou qualquer tecla para Não: ").upper()
         
-        if resposta == 'S':
-            print("Iniciando Fuzzing de Parâmetros interativamente...")
-            parameter_fuzzing(params, args.wordlist)
+        if resposta_sim_nao == 'S':
+            
+            # Pergunta pelo caminho da wordlist se não foi fornecido via --param-wordlist
+            if not args.param_wordlist:
+                caminho_wordlist = input(f"   Caminho para wordlist de parâmetros (deixe em branco para usar '{args.wordlist}'): ").strip()
+                if not caminho_wordlist:
+                    caminho_wordlist = args.wordlist
+            else:
+                caminho_wordlist = args.param_wordlist
+            
+            # Verifica se o arquivo existe antes de rodar
+            if os.path.exists(caminho_wordlist):
+                print(f"Iniciando Fuzzing de Parâmetros interativamente com '{caminho_wordlist}'...")
+                parameter_fuzzing(params, caminho_wordlist)
+            else:
+                print(f"[!] Erro: Wordlist '{caminho_wordlist}' não encontrada. Fuzzing de Parâmetros ignorado.")
+                
         else:
             print("Fuzzing de Parâmetros ignorado. Use a flag --fuzz-param na próxima vez.")
             
