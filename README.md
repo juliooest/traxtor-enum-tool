@@ -3,7 +3,7 @@ Ferramenta de Enumeração Multi-Threaded para CTF
 🚀 Visão Geral
 O TRAXTOR é uma ferramenta Python multi-threaded feita pra agilizar enum web em CTF e Bug Bounty. <br/> Ele junta a força do Feroxbuster, FFUF, ParamSpider e kXSS num pipeline só, rápido e modular.
 
-Você escolhe o que quer rodar — diretórios, arquivos, parâmetros ou XSS.
+Você escolhe o que quer rodar seja diretórios, arquivos, parâmetros ou XSS.
 
 ⚙️ Pipeline do TRAXTOR
 Fluxo completo (--full):
