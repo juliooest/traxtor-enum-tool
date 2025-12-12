@@ -5,8 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import json
 
-
-MAX_WORKERS = 30 # Número máximo de threads padrão para escaneamentos
+MAX_WORKERS = 30 
 OUTPUT_DIR = "output_ctf"
 
 def banner():
@@ -19,10 +18,9 @@ def banner():
     print("    ░      ░▒ ░ ▒░  ▒   ▒▒ ░░░   ░▒ ░    ░      ░ ▒ ▒░   ░▒ ░ ▒░")
     print("  ░        ░░   ░   ░   ▒    ░    ░    ░      ░ ░ ░ ▒    ░░   ░")
     print("            ░           ░  ░ ░    ░               ░ ░     ░")
-    print("                                                         ® trax\n")
+    print("                                                         ® TRAXTOR\n")
 
 def run(cmd):
-    """Executa um comando de shell e retorna a saída."""
     try:
         return subprocess.getoutput(cmd)
     except Exception as e:
@@ -30,38 +28,33 @@ def run(cmd):
         return ""
 
 def feroxbuster_scan(target, wordlist, threads):
-    """Escaneia um único alvo (URL) com Feroxbuster e retorna a lista de diretórios encontrados."""
     print(f"[*] Feroxbuster: Iniciando em {target}...")
     cmd = f"feroxbuster -u {target} -w {wordlist} -d 4 -t {threads} --silent --no-recursion"
     output = run(cmd)
 
     dirs = set()
     for line in output.splitlines():
-        # Captura URLs completas (http(s)://.../)
         m = re.search(r"((?:https?://|http://)[^\s]+?)(?:/\s|$)", line)
         if m:
             dirs.add(m.group(1).rstrip("/"))
+            
+    dirs_list = list(dirs)
+    with open(f"{OUTPUT_DIR}/dirs_found.txt", "w") as f:
+        f.write("\n".join(dirs_list))
 
-    return list(dirs)
+    return dirs_list
 
 def feroxbuster_parallel(target_url, wordlist, threads):
-    """Gerencia a execução paralela de Feroxbuster (neste caso, é um único alvo, mas mantém a estrutura)."""
-    banner()
     print(f"[+] Iniciando Fuzzing de Diretórios com Feroxbuster em {target_url}...")
-    
-    # Feroxbuster já é multi-threaded, então o rodamos uma vez
     found_dirs = feroxbuster_scan(target_url, wordlist, threads)
-    
     print(f"[+] Diretórios válidos encontrados: {len(found_dirs)}")
     return found_dirs
 
 def ffuf_single_target(directory, wordlist):
-    """Roda FFUF em um único diretório para encontrar arquivos/endpoints."""
     print(f"[*] FFUF: Buscando arquivos em {directory}...")
     safe_name = directory.replace("https://", "").replace("http://", "").replace("/", "_").replace(":", "")
     outfile = f"{OUTPUT_DIR}/ffuf/{safe_name}.json"
 
-    # Comando FFUF: -mc 200,301 (códigos de sucesso/redirecionamento)
     cmd = (
         f"ffuf -u {directory}/FUZZ -w {wordlist} "
         f"-mc 200,204,301,302,307,403 -fs 0 -ic -json -o {outfile} -t {MAX_WORKERS}"
@@ -78,12 +71,11 @@ def ffuf_single_target(directory, wordlist):
                     if fuzz_result:
                         valid_endpoints.append(f"{directory}/{fuzz_result}")
         except json.JSONDecodeError:
-            pass # Ignora arquivos JSON inválidos
+            pass 
 
     return valid_endpoints
 
 def ffuf_parallel(directories, wordlist):
-    """Gerencia a execução paralela de FFUF sobre a lista de diretórios."""
     if not directories:
         print("[-] Nenhuma diretório para rodar FFUF.")
         return []
@@ -93,26 +85,22 @@ def ffuf_parallel(directories, wordlist):
     all_endpoints = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Mapeia a função ffuf_single_target para cada diretório na lista
         future_to_dir = [executor.submit(ffuf_single_target, d, wordlist) for d in directories]
         
         for future in future_to_dir:
             try:
-                # O resultado de cada thread é uma lista de endpoints encontrados para aquele diretório
                 all_endpoints.extend(future.result())
             except Exception as exc:
                 print(f"[*] FFUF falhou: {exc}")
 
     print(f"[+] Total de Endpoints encontrados por FFUF: {len(all_endpoints)}")
     
-    # Salvando endpoints em um txt
     with open(f"{OUTPUT_DIR}/all_endpoints.txt", "w") as f:
         f.write("\n".join(all_endpoints))
     
     return all_endpoints
 
 def param_spider_scan(target):
-    """Roda ParamSpider e retorna a lista de URLs com parâmetros."""
     dom = target.replace("https://", "").replace("http://", "")
     print(f"\n[+] Iniciando ParamSpider em {dom}...")
 
@@ -126,7 +114,6 @@ def param_spider_scan(target):
     return params
 
 def kxss_scan(params):
-    """Roda kXSS na lista de URLs com parâmetros para encontrar possíveis XSS."""
     if not params:
         print("[-] Nenhuma URL com parâmetro para rodar kXSS.")
         return
@@ -146,58 +133,140 @@ def kxss_scan(params):
     else:
         print("[+] Nenhum XSS encontrado.")
 
+def parameter_fuzzing(params, wordlist):
+    if not params:
+        print("[-] Nenhuma URL com parâmetro para fuzzing.")
+        return
+
+    print(f"\n[+] Iniciando Fuzzing de VALOR de Parâmetros (LFI/SQLi) em {len(params)} URLs...")
+    
+    fuzz_targets_file = f"{OUTPUT_DIR}/param_fuzz_targets.txt"
+    
+    processed_params = []
+    for p in params:
+        if '=' in p:
+            parts = p.rsplit('=', 1)
+            processed_params.append(f"{parts[0]}=FUZZ")
+
+    with open(fuzz_targets_file, "w") as f:
+        f.write("\n".join(processed_params))
+
+    output_fuzz_file = f"{OUTPUT_DIR}/param_fuzz_hits.txt"
+    
+    cmd = (
+        f"ffuf -request {fuzz_targets_file} -w {wordlist} "
+        f"-mc 200,301,302,403 -fs 0 -ic -t {MAX_WORKERS} -o {output_fuzz_file}"
+    )
+    
+    run(cmd)
+    
+    os.remove(fuzz_targets_file)
+
+    if os.path.exists(output_fuzz_file) and os.path.getsize(output_fuzz_file) > 0:
+        print(f"[+] Possíveis Hits de Fuzzing de Parâmetros (LFI/SQLi/etc.) salvos em {output_fuzz_file}")
+    else:
+        print("[+] Nenhum hit notável durante o fuzzing de parâmetros.")
+
+def finalize_summary():
+    summary_file = f"{OUTPUT_DIR}/vulnerability_summary.txt"
+    
+    xss_hits = f"{OUTPUT_DIR}/xss_hits.txt"
+    fuzz_hits = f"{OUTPUT_DIR}/param_fuzz_hits.txt"
+    
+    if (os.path.exists(xss_hits) and os.path.getsize(xss_hits) > 0) or \
+       (os.path.exists(fuzz_hits) and os.path.getsize(fuzz_hits) > 0):
+        
+        print("\n[*] Consolidando hits de vulnerabilidade...")
+        
+        with open(summary_file, "w") as out:
+            out.write("================================================\n")
+            out.write("=== TRAXTOR - RESUMO DE POTENCIAIS VULNERABILIDADES ===\n")
+            out.write("================================================\n\n")
+
+            if os.path.exists(xss_hits) and os.path.getsize(xss_hits) > 0:
+                out.write("--- [ 1. POSSÍVEIS REFLEXÕES XSS (kXSS) ] ---\n")
+                with open(xss_hits, "r") as f:
+                    out.write(f.read())
+                out.write("\n-----------------------------------------------\n\n")
+
+            if os.path.exists(fuzz_hits) and os.path.getsize(fuzz_hits) > 0:
+                out.write("--- [ 2. HITS DE FUZZING DE PARÂMETROS (LFI/SQLi/etc.) ] ---\n")
+                out.write("URLs que tiveram respostas notáveis durante o fuzzing de valores de parâmetro:\n")
+                with open(fuzz_hits, "r") as f:
+                    out.write(f.read())
+                out.write("\n--------------------------------------------------------------\n\n")
+        
+        print(f"[+] Resumo de Vulnerabilidades criado em: {summary_file}")
+    
+    else:
+        if os.path.exists(fuzz_hits): os.remove(fuzz_hits)
+        if os.path.exists(xss_hits): os.remove(xss_hits)
+        print("[-] Nenhuma vulnerabilidade notável encontrada para consolidar.")
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ferramenta Multi-Threaded de Enumeração para CTF.",
+        description="Ferramenta Multi-Threaded de Enumeração para CTF (TRAXTOR).",
         formatter_class=argparse.RawTextHelpFormatter
     )
     
-    # Argumentos Obrigatórios
     parser.add_argument("-u", "--url", required=True, help="Alvo ex: https://site.com")
-    parser.add_argument("-w", "--wordlist", required=True, help="Wordlist de diretórios/arquivos")
+    parser.add_argument("-w", "--wordlist", required=True, help="Wordlist de diretórios/arquivos (também usada para fuzzing de parâmetros)")
     
-    # Argumentos para Controle de Execução
     parser.add_argument("-t", "--threads", default=MAX_WORKERS, type=int, 
                         help=f"Número de threads para o Feroxbuster (Padrão: {MAX_WORKERS})")
     
-    # Argumentos de Módulos (Escolhas)
     parser.add_argument("--ferox", action="store_true", help="Rodar Feroxbuster (Diretórios)")
-    parser.add_argument("--ffuf", action="store_true", help="Rodar FFUF (Arquivos/Endpoints) nos diretórios encontrados pelo Feroxbuster")
+    parser.add_argument("--ffuf", action="store_true", help="Rodar FFUF (Arquivos/Endpoints)")
     parser.add_argument("--param", action="store_true", help="Rodar ParamSpider (Parâmetros)")
-    parser.add_argument("--kxss", action="store_true", help="Rodar kXSS nas URLs encontradas pelo ParamSpider")
-    parser.add_argument("--full", action="store_true", help="Rodar Feroxbuster, FFUF, ParamSpider e kXSS (pipeline completo)")
+    parser.add_argument("--kxss", action="store_true", help="Rodar kXSS nas URLs encontradas")
+    parser.add_argument("--fuzz-param", action="store_true", help="Rodar Fuzzing de Valores de Parâmetros (requer --param)")
+    parser.add_argument("--full", action="store_true", help="Rodar TODOS os módulos (pipeline completo)")
     
     args = parser.parse_args()
     
-    # Cria o diretório de saída
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    print(f"[*] AutoCTFEnum iniciado em {args.url}...\n")
+    banner()
+    print(f"[*] TRAXTOR iniciado em {args.url}...\n")
     
-    # --- Lógica de Execução do Pipeline ---
-    
-    # 1. Feroxbuster (Diretórios)
     dirs = []
     if args.ferox or args.full:
         dirs = feroxbuster_parallel(args.url, args.wordlist, args.threads)
     
-    # 2. FFUF (Arquivos/Endpoints)
     if (args.ffuf or args.full) and dirs:
         ffuf_parallel(dirs, args.wordlist)
     
-    # 3. ParamSpider (Parâmetros)
     params = []
-    if args.param or args.full:
+    if args.param or args.full or args.fuzz_param or args.kxss:
         params = param_spider_scan(args.url)
         
-    # 4. kXSS (Vulnerabilidades)
     if (args.kxss or args.full) and params:
         kxss_scan(params)
 
-    # Mensagem final
+    should_fuzz_param = (args.fuzz_param or args.full)
+    if should_fuzz_param and params:
+        parameter_fuzzing(params, args.wordlist)
+
+    finalize_summary()
+    
     print("\n[+] Processo de Enumeração Concluído.")
     print(f"Output salvo em /{OUTPUT_DIR}")
+    
+    if not should_fuzz_param and params:
+        
+        print("\n\n#####################################################################")
+        print("❓ Deseja iniciar o Fuzzing de Parâmetros (LFI/SQLi/etc.) agora?")
+        print(f"   (Será usada a wordlist principal: {args.wordlist})")
+        
+        resposta = input("Digite 'S' para Sim ou qualquer tecla para Não: ").upper()
+        
+        if resposta == 'S':
+            print("Iniciando Fuzzing de Parâmetros interativamente...")
+            parameter_fuzzing(params, args.wordlist)
+        else:
+            print("Fuzzing de Parâmetros ignorado. Use a flag --fuzz-param na próxima vez.")
+            
+    print("\n[+] Fim da execução do TRAXTOR.")
 
 if __name__ == "__main__":
     main()
