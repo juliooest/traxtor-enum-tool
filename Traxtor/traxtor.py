@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 
 MAX_WORKERS = 30 
-OUTPUT_DIR = "output_ctf"
+OUTPUT_DIR = "results"
 
 def banner():
     print("▄▄▄█████▓ ██▀███   ▄▄▄      ▒██   ██▒▄▄▄█████▓ ▒█████   ██▀███")
