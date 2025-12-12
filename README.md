@@ -15,6 +15,7 @@ ParamSpider – coleta URLs com parâmetros.
 kXSS – testa XSS nas URLs encontradas.
 
 ⚠️ Aviso Legal
+<br/>
 Uso somente para CTF, Bug Bounty autorizado ou sistemas seus. Fora disso é ilegal.
 
 🛠️ Instalação
@@ -29,17 +30,22 @@ chmod +x install_tools.sh
 python3 traxtor.py [ARGUMENTOS]
 
 📖 Uso
+<br/>
 💡 Modo Completo
 python3 traxtor.py -u https://target.com -w /path/to/wordlist.txt --full -t 50
 
 🎯 Modo Modular
+<br/>
 Só Ferox:
+<br/>
 python3 traxtor.py -u https://target.com -w /path/to/wordlist.txt --ferox
 
 Só ParamSpider + kXSS:
+<br/>
 python3 traxtor.py -u https://target.com -w /path/to/wordlist.txt --param --kxss
 
 🔧 Argumentos
+<br/>
 Flag	Descrição	Default
 <br/>
 -u, --url	URL alvo (obrigatório)	-
